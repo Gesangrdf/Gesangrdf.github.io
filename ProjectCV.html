@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Virtual Glasses Try-On</title>
+    <!-- Menggunakan Tailwind CSS untuk styling yang modern dan responsif -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Memuat pustaka face-api.js dari CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+    <style>
+        /* Menyesuaikan beberapa gaya dasar */
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Memastikan canvas berada tepat di atas video */
+        #canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        /* Memberikan efek transisi pada tombol untuk pengalaman pengguna yang lebih baik */
+        .btn-glasses {
+            transition: all 0.2s ease-in-out;
+        }
+        .btn-glasses.active {
+            transform: scale(1.1);
+            box-shadow: 0 0 15px rgba(59, 130, 246, 0.7);
+        }
+    </style>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
+</head>
+<body class="bg-gray-900 text-white flex flex-col items-center justify-center min-h-screen p-4">
+
+    <div class="w-full max-w-3xl mx-auto text-center">
+        <h1 class="text-3xl md:text-4xl font-bold mb-2">Virtual Glasses Try-On</h1>
+        <p class="text-gray-400 mb-6">Arahkan wajah Anda ke kamera dan pilih model kacamata di bawah.</p>
+    </div>
+
+    <!-- Kontainer untuk video dan canvas -->
+    <div class="relative w-full max-w-2xl mx-auto rounded-lg overflow-hidden shadow-2xl mb-6 border-4 border-gray-700">
+        <video id="video" width="720" height="560" autoplay muted playsinline></video>
+        <canvas id="canvas"></canvas>
+        <!-- Pesan saat memuat model atau kamera -->
+        <div id="loadingMessage" class="absolute inset-0 bg-black bg-opacity-70 flex items-center justify-center text-xl">
+            <div class="flex items-center">
+                <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span>Memuat model...</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pilihan Kacamata -->
+    <div id="glasses-selector" class="flex flex-wrap justify-center gap-4">
+        <!-- Tombol akan ditambahkan oleh JavaScript -->
+    </div>
+
+    <script type="module">
+        // --- KONFIGURASI ---
+        // [PERBAIKAN] Menggunakan URL gambar online untuk mengatasi error.
+        // Ini memastikan gambar selalu dapat diakses oleh browser.
+        const glassesOptions = [
+            { name: "Model 1", path: "./glasses1.png" },
+            { name: "Model 2", path: "./glasses2.png" },
+            { name: "Model 3", path: "./glasses3.png" },
+            { name: "Model 4", path: "./glasses4.png" },
+        ];
+
+        // --- ELEMEN DOM ---
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const loadingMessage = document.getElementById('loadingMessage');
+        const glassesSelector = document.getElementById('glasses-selector');
+        const ctx = canvas.getContext('2d');
+
+        // --- STATE APLIKASI ---
+        let currentGlasses = new Image();
+        // Mengatur crossOrigin untuk mengizinkan pemuatan gambar dari domain lain di canvas
+        currentGlasses.crossOrigin = "Anonymous";
+        let modelsLoaded = false;
+
+        // --- FUNGSI UTAMA ---
+
+        // Fungsi untuk memuat model deteksi wajah
+        async function loadModels() {
+            const MODEL_URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights';
+            try {
+                await Promise.all([
+                    faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+                    faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL)
+                ]);
+                modelsLoaded = true;
+                console.log("Model berhasil dimuat");
+            } catch (error) {
+                console.error("Gagal memuat model:", error);
+                loadingMessage.innerText = "Gagal memuat model AI. Coba refresh halaman.";
+            }
+        }
+
+
+        // Fungsi untuk memulai kamera
+        async function startCamera() {
+            if (!modelsLoaded) return;
+            loadingMessage.innerHTML = '<span>Mengakses kamera...</span>';
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: {} });
+                video.srcObject = stream;
+            } catch (err) {
+                console.error("Error mengakses kamera:", err);
+                loadingMessage.innerText = "Tidak dapat mengakses kamera. Mohon izinkan akses kamera di browser Anda.";
+            }
+        }
+
+        // Fungsi utama untuk deteksi wajah dan penempatan kacamata
+        async function detectFaces() {
+            if (video.paused || video.ended || !modelsLoaded) {
+                requestAnimationFrame(detectFaces);
+                return;
+            }
+
+            const detections = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks();
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            if (detections && currentGlasses.complete && currentGlasses.naturalWidth !== 0) {
+                const landmarks = detections.landmarks;
+                
+                // [PERBAIKAN] Menggunakan titik yang benar untuk sudut mata kiri dan kanan
+                const leftEyeCorner = landmarks.positions[36];
+                const rightEyeCorner = landmarks.positions[45];
+
+                // 1. Hitung sudut kemiringan mata
+                const angle = Math.atan2(rightEyeCorner.y - leftEyeCorner.y, rightEyeCorner.x - leftEyeCorner.x);
+
+                // 2. Hitung lebar kacamata berdasarkan jarak antar mata
+                const eyeDistance = Math.hypot(rightEyeCorner.x - leftEyeCorner.x, rightEyeCorner.y - leftEyeCorner.y);
+                const glassesWidth = eyeDistance * 1.8; // Faktor skala bisa disesuaikan
+
+                // 3. Hitung skala gambar kacamata
+                const scale = glassesWidth / currentGlasses.width;
+                const glassesHeight = currentGlasses.height * scale;
+
+                // 4. Tentukan posisi tengah antara kedua mata
+                const eyeCenterX = (leftEyeCorner.x + rightEyeCorner.x) / 2;
+                const eyeCenterY = (leftEyeCorner.y + rightEyeCorner.y) / 2;
+                
+                // 5. Gambar kacamata di canvas
+                ctx.save();
+                ctx.translate(eyeCenterX, eyeCenterY);
+                ctx.rotate(angle);
+                
+                ctx.drawImage(
+                    currentGlasses,
+                    -glassesWidth / 2.35 ,
+                    -glassesHeight / 2.35,
+                    glassesWidth,
+                    glassesHeight
+                );
+
+                ctx.restore();
+            }
+
+            requestAnimationFrame(detectFaces);
+        }
+
+        // Fungsi untuk membuat tombol pilihan kacamata
+        function createGlassesButtons() {
+            glassesOptions.forEach((opt, index) => {
+                const button = document.createElement('button');
+                button.innerText = opt.name;
+                button.className = 'btn-glasses bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg shadow-md';
+                button.dataset.path = opt.path;
+
+                button.onclick = (e) => {
+                    document.querySelectorAll('.btn-glasses').forEach(btn => btn.classList.remove('active', 'bg-blue-700'));
+                    e.target.classList.add('active', 'bg-blue-700');
+                    
+                    currentGlasses.src = e.target.dataset.path;
+                    currentGlasses.onerror = () => {
+                        console.error(`Gagal memuat gambar: ${e.target.dataset.path}`);
+                    }
+                };
+                glassesSelector.appendChild(button);
+
+                if (index === 0) {
+                    button.click();
+                }
+            });
+        }
+
+        // --- INISIALISASI APLIKASI ---
+        video.addEventListener('play', () => {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            loadingMessage.style.display = 'none';
+            requestAnimationFrame(detectFaces);
+        });
+        
+        async function main() {
+            createGlassesButtons();
+            await loadModels();
+            await startCamera();
+        }
+
+        main();
+
+    </script>
+</body>
+</html>
