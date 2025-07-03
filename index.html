@@ -63,10 +63,10 @@
         // --- KONFIGURASI ---
         // Pastikan file gambar ini ada di folder yang sama dengan file HTML Anda
         const glassesOptions = [
-            { name: "Model 1", path: "./glasses1.png" },
-            { name: "Model 2", path: "./glasses2.png" },
-            { name: "Model 3", path: "./glasses3.png" },
-            { name: "Model 4", path: "./glasses4.png" },
+            { name: "Model 2", path: "glasses2.png" },
+            { name: "Model 3", path: "glasses3.png" },
+            { name: "Model 4", path: "glasses4.png" },
+            { name: "Model 1", path: "glasses1.png" },
         ];
 
         // --- ELEMEN DOM ---
@@ -127,7 +127,7 @@
             if (detections && currentGlasses.complete && currentGlasses.naturalWidth !== 0) {
                 const landmarks = detections.landmarks;
                 
-                const leftEyeCorner = landmarks.positions[36];
+                const leftEyeCorner = landmarks.positions[40];
                 const rightEyeCorner = landmarks.positions[45];
 
                 // 1. Hitung sudut kemiringan mata
